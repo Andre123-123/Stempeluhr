@@ -453,6 +453,24 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
           <p class="small">Gesetzliche Feiertage in Hessen werden automatisch berücksichtigt.</p>
         </section>
 
+        <section class="card form-card" aria-labelledby="h-urlaub">
+          <h2 id="h-urlaub">Urlaub <span id="u-jahr"></span></h2>
+          <div class="zwei">
+            <div class="field">
+              <label for="u-anspruch">Anspruch (Tage)</label>
+              <input class="inp" type="number" id="u-anspruch" min="0" max="366" step="0.5" placeholder="30">
+            </div>
+            <div class="field">
+              <label for="u-rest">Rest aus Vorjahr</label>
+              <input class="inp" type="number" id="u-rest" min="0" max="366" step="0.5" placeholder="0">
+            </div>
+          </div>
+          <div class="sum" style="padding: 4px 0 0; border-top: 1px solid var(--line-soft)">
+            <div><span class="lbl">Verbleibend</span><span class="big" id="u-frei">—</span><span class="small" id="u-frei-hint">&nbsp;</span></div>
+            <div><span class="lbl">Verplant</span><span class="big" id="u-belegt">0</span><span class="small" id="u-belegt-hint">&nbsp;</span></div>
+          </div>
+        </section>
+
         <section class="card form-card" aria-labelledby="h-konto">
           <h2 id="h-konto">Überstundenkonto</h2>
           <p class="small">Zählt jeden Tag ab dem Startdatum. Ein Arbeitstag ohne Eintrag zählt als Minus. Urlaub, Krank und Feiertage zählen als erfüllt.</p>
@@ -482,19 +500,10 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 
         <section class="card form-card" aria-labelledby="h-sicherung">
           <h2 id="h-sicherung">Sicherung</h2>
-          <p class="small">Deine Zeiten liegen nur auf diesem iPhone. Wenn du das Symbol löschst, sind sie weg. Speichere ab und zu eine Sicherung, zum Beispiel in iCloud Drive.</p>
+          <p class="small">Deine Zeiten liegen nur auf diesem Gerät. Wenn du die App vom Startbildschirm entfernst oder die Browserdaten löschst, sind sie weg. Speichere deshalb ab und zu eine Sicherung, zum Beispiel in iCloud Drive, Google Drive oder per Mail an dich selbst.</p>
           <button type="button" class="btn btn-std c-outline" id="btn-backup">Sicherung speichern</button>
           <button type="button" class="btn btn-std c-outline" id="btn-restore">Sicherung laden</button>
           <input type="file" id="restore-file" hidden>
-          <div class="zwei">
-            <button type="button" class="link-btn" id="btn-copy">Als Text kopieren</button>
-            <button type="button" class="link-btn" id="btn-paste">Aus Text laden</button>
-          </div>
-          <div class="stack" id="restore-box" hidden>
-            <label class="small" for="restore-text">Sicherungstext hier einfügen</label>
-            <textarea class="inp text" id="restore-text" rows="4" style="height: auto; padding: 12px; font-size: 14px" spellcheck="false" autocomplete="off"></textarea>
-            <button type="button" class="btn btn-second c-ink" id="btn-paste-ok">Übernehmen</button>
-          </div>
           <p class="small" id="backup-stand"></p>
           <p class="small" id="backup-info" role="status"></p>
         </section>
@@ -736,6 +745,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     days: {},
     soll: STD_SOLL.slice(),
     konto: { start: '', startwert: 0 },
+    urlaub: {},
     screen: 'heute',
     offset: 0,
     kalOffset: 0,
@@ -818,6 +828,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       }
       if (v && Array.isArray(v.soll) && v.soll.length === 7) state.soll = v.soll.map(sollWert);
       if (v && v.konto) state.konto = kontoNormal(v.konto);
+      if (v && v.urlaub) state.urlaub = urlaubNormal(v.urlaub);
     } catch (e) { /* ohne Speicher weiter */ }
   }
   function kontoNormal(k) {
@@ -827,7 +838,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     };
   }
   function lokalSpeichern() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify({ days: state.days, soll: state.soll, konto: state.konto })); }
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ days: state.days, soll: state.soll, konto: state.konto, urlaub: state.urlaub })); }
     catch (e) { toast('Konnte nicht speichern. Ist privates Surfen aktiv?'); }
   }
   var LS_BACKUP = 'stempeluhr.letzteSicherung';
@@ -1275,7 +1286,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       }));
       if (alt && monate[alt]) sel.value = alt;
     }
-    $('speicher-hinweis').textContent = 'Stempeluhr Version 7 · läuft komplett auf diesem Gerät, ohne Konto und ohne Server.';
+    $('speicher-hinweis').textContent = 'Stempeluhr Version 8';
 
     var ks = $('k-start'), kw2 = $('k-wert');
     if (document.activeElement !== ks) ks.value = state.konto.start || '';
@@ -1372,8 +1383,70 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       if (k.slice(0, 4) === String(jahr) && state.days[k].art === 'urlaub') { if (k <= hk) genommen++; else geplant++; }
     });
     $('m-urlaub-lbl').textContent = 'Urlaub ' + jahr;
-    $('m-urlaub').textContent = (genommen + geplant) + (genommen + geplant === 1 ? ' Tag' : ' Tage');
-    $('m-urlaub-hint').textContent = genommen + ' genommen · ' + geplant + ' geplant';
+    var uj = urlaubJahr(jahr);
+    if (uj.anspruch === null) {
+      $('m-urlaub').textContent = tageText(genommen + geplant);
+      $('m-urlaub-hint').textContent = genommen + ' genommen · ' + geplant + ' geplant';
+    } else {
+      var gesamtU = uj.anspruch + uj.rest;
+      $('m-urlaub').textContent = String(gesamtU - genommen - geplant).replace('.', ',') + ' übrig';
+      $('m-urlaub-hint').textContent = 'von ' + tageText(gesamtU) + ' · ' + genommen + ' genommen · ' + geplant + ' geplant';
+    }
+  }
+
+  // ---------- Urlaubsanspruch ----------
+  function urlaubJahr(jahr) {
+    var u = state.urlaub[String(jahr)] || {};
+    return { anspruch: typeof u.anspruch === 'number' ? u.anspruch : null, rest: typeof u.rest === 'number' ? u.rest : 0 };
+  }
+  function urlaubZaehlen(jahr, hk) {
+    var genommen = 0, geplant = 0;
+    Object.keys(state.days).forEach(function (k) {
+      if (k.slice(0, 4) === String(jahr) && state.days[k].art === 'urlaub') { if (k <= hk) genommen++; else geplant++; }
+    });
+    return { genommen: genommen, geplant: geplant };
+  }
+  function tageText(n) { var s = String(n).replace('.', ','); return s + (n === 1 ? ' Tag' : ' Tage'); }
+  function urlaubNormal(v) {
+    var r = {};
+    if (v && typeof v === 'object') Object.keys(v).forEach(function (j) {
+      if (/^\d{4}$/.test(j) && v[j]) {
+        var a = zahl(v[j].anspruch), b = zahl(v[j].rest);
+        r[j] = { anspruch: a !== null && a >= 0 ? a : null, rest: b !== null && b >= 0 ? b : 0 };
+      }
+    });
+    return r;
+  }
+  function urlaubSetzen(feld, wert) {
+    var jahr = String(new Date().getFullYear());
+    var u = urlaubJahr(jahr);
+    var n = wert === '' ? (feld === 'anspruch' ? null : 0) : Math.max(0, Math.min(366, Number(String(wert).replace(',', '.'))));
+    if (n !== null && !isFinite(n)) return;
+    u[feld] = n;
+    var alle = Object.assign({}, state.urlaub);
+    alle[jahr] = u;
+    state.urlaub = alle;
+    lokalSpeichern();
+    renderAll();
+  }
+  function renderUrlaub(now) {
+    var jahr = new Date(now).getFullYear();
+    var u = urlaubJahr(jahr), z = urlaubZaehlen(jahr, heuteKey(now));
+    $('u-jahr').textContent = String(jahr);
+    var a = $('u-anspruch'), r = $('u-rest');
+    if (document.activeElement !== a) a.value = u.anspruch === null ? '' : String(u.anspruch);
+    if (document.activeElement !== r) r.value = u.rest ? String(u.rest) : '';
+    var gesamt = u.anspruch === null ? null : u.anspruch + u.rest;
+    $('u-belegt').textContent = String(z.genommen + z.geplant);
+    $('u-belegt-hint').textContent = z.genommen + ' genommen · ' + z.geplant + ' geplant';
+    if (gesamt === null) {
+      $('u-frei').textContent = '—';
+      $('u-frei-hint').textContent = 'Anspruch eintragen';
+    } else {
+      var frei = gesamt - z.genommen - z.geplant;
+      $('u-frei').textContent = String(frei).replace('.', ',');
+      $('u-frei-hint').textContent = 'von ' + tageText(gesamt) + (frei < 0 ? ' · überzogen' : '');
+    }
   }
 
   function renderTabs() {
@@ -1391,6 +1464,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     renderWoche(now);
     renderKalender(now);
     renderMehr();
+    renderUrlaub(now);
     renderSheet(now);
   }
 
@@ -1520,6 +1594,8 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     speichereSoll();
   });
   $('btn-export').addEventListener('click', exportieren);
+  $('u-anspruch').addEventListener('change', function (e) { urlaubSetzen('anspruch', e.target.value); });
+  $('u-rest').addEventListener('change', function (e) { urlaubSetzen('rest', e.target.value); });
   $('k-start').addEventListener('change', function (e) {
     var v = e.target.value;
     state.konto = { start: /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '', startwert: state.konto.startwert };
@@ -1622,14 +1698,14 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     return Promise.resolve('download');
   }
   function ergebnisText(r, was) {
-    if (r === 'download') return was + ' als Download gestartet. Falls nichts erscheint: „Als Text kopieren“ nutzen.';
+    if (r === 'download') return was + ' als Download gestartet. Du findest sie im Ordner „Downloads“.';
     if (r === 'geteilt') return was + ' erstellt.';
     return '';
   }
   // ---------- Sicherung ----------
   function backupInfo(t) { $('backup-info').textContent = t; }
   function sicherungsText() {
-    return JSON.stringify({ app: 'stempeluhr', version: 2, gespeichert: new Date().toISOString(), days: state.days, soll: state.soll, konto: state.konto });
+    return JSON.stringify({ app: 'stempeluhr', version: 2, gespeichert: new Date().toISOString(), days: state.days, soll: state.soll, konto: state.konto, urlaub: state.urlaub });
   }
   function alsGesichertMerken() {
     try { localStorage.setItem(LS_BACKUP, String(Date.now())); } catch (e) { /* ignorieren */ }
@@ -1643,19 +1719,6 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       if (r !== 'abgebrochen') alsGesichertMerken();
     });
   }
-  function textKopieren() {
-    var txt = sicherungsText();
-    var ok = function () { backupInfo('Sicherung kopiert. Füge sie in eine Notiz oder E-Mail an dich selbst ein.'); alsGesichertMerken(); };
-    var manuell = function () {
-      var ta = $('restore-text');
-      $('restore-box').hidden = false;
-      ta.value = txt;
-      ta.focus(); ta.select();
-      backupInfo('Text ist markiert. Tippe lange darauf und wähle „Kopieren“.');
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, manuell);
-    else manuell();
-  }
   function wiederherstellen(txt) {
     var v;
     try { v = JSON.parse(String(txt).trim()); } catch (e) { v = null; }
@@ -1668,6 +1731,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     state.days = days;
     if (Array.isArray(v.soll) && v.soll.length === 7) state.soll = v.soll.map(sollWert);
     if (v.konto) state.konto = kontoNormal(v.konto);
+    if (v.urlaub) state.urlaub = urlaubNormal(v.urlaub);
     lokalSpeichern();
     renderAll();
     backupInfo(n + ' Tage aus der Sicherung übernommen.');
@@ -1675,16 +1739,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   }
   $('btn-backup').addEventListener('click', sicherungSpeichern);
   $('sicher-btn').addEventListener('click', sicherungSpeichern);
-  $('btn-copy').addEventListener('click', textKopieren);
   $('btn-restore').addEventListener('click', function () { $('restore-file').click(); });
-  $('btn-paste').addEventListener('click', function () {
-    var box = $('restore-box');
-    box.hidden = !box.hidden;
-    if (!box.hidden) { $('restore-text').value = ''; $('restore-text').focus(); }
-  });
-  $('btn-paste-ok').addEventListener('click', function () {
-    if (wiederherstellen($('restore-text').value)) { $('restore-text').value = ''; $('restore-box').hidden = true; }
-  });
   $('restore-file').addEventListener('change', function (e) {
     var f = e.target.files && e.target.files[0];
     e.target.value = '';
