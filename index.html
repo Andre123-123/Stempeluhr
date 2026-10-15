@@ -289,6 +289,10 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 .kc.urlaub small, .kc.urlaub b { color: var(--urlaub-fg); }
 .kc.krank { background: var(--krank-bg); }
 .kc.krank small, .kc.krank b { color: var(--krank-fg); }
+.check { display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.check input { width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--accent); }
+.check small { font-weight: 400; color: var(--muted); font-size: 13px; }
+.kc.halb { background: linear-gradient(135deg, var(--urlaub-bg) 50%, var(--bg) 50%); }
 .kc.feiertag { background: var(--warn-bg); }
 .kc.feiertag small, .kc.feiertag b { color: var(--accent); }
 .kc.fehlt small { color: var(--danger); }
@@ -423,6 +427,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 
         <div class="legende" aria-hidden="true">
           <span><i style="background: var(--urlaub-bg); border: 1px solid var(--urlaub-fg)"></i>Urlaub</span>
+          <span><i style="background: linear-gradient(135deg, var(--urlaub-bg) 50%, var(--bg) 50%); border: 1px solid var(--urlaub-fg)"></i>½ Urlaub</span>
           <span><i style="background: var(--krank-bg); border: 1px solid var(--krank-fg)"></i>Krank</span>
           <span><i style="background: var(--warn-bg); border: 1px solid var(--accent)"></i>Feiertag</span>
           <span><i style="border: 2px solid var(--accent)"></i>Heute</span>
@@ -552,6 +557,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
         </fieldset>
         <p class="small" id="f-feiertag" hidden></p>
         <div class="stack" id="f-zeiten">
+          <label class="check" for="f-halb"><input type="checkbox" id="f-halb"><span>Halber Urlaubstag <small>(Soll halbiert, zählt 0,5 Urlaubstage)</small></span></label>
           <div class="zwei">
             <div class="field">
               <label for="f-kommen">Beginn</label>
@@ -669,11 +675,12 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   function effSoll(k) {
     var t = state.days[k];
     if (feiertag(k) || (t && t.art)) return 0;
+    if (t && t.halb) return state.soll[wd(k)] / 2;
     return state.soll[wd(k)];
   }
   function kontoStart() {
     if (state.konto.start) return state.konto.start;
-    var ks = Object.keys(state.days).filter(function (k) { return state.days[k].kommen || state.days[k].art; }).sort();
+    var ks = Object.keys(state.days).filter(function (k) { return state.days[k].kommen || state.days[k].art || state.days[k].halb; }).sort();
     return ks[0] || heuteKey(Date.now());
   }
   // Beitrag eines Tages zum Saldo, null = zählt (noch) nicht
@@ -710,6 +717,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   function normal(v) {
     return {
       art: v.art === 'urlaub' || v.art === 'krank' ? v.art : null,
+      halb: v.halb === true,
       kommen: zahl(v.kommen),
       gehen: zahl(v.gehen),
       pauseMin: Math.max(0, zahl(v.pauseMin) || 0),
@@ -915,11 +923,13 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     return {
       art: art ? art.value : '',
       bis: $('f-bis').value,
+      halb: $('f-halb').checked,
       kommen: $('f-kommen').value, gehen: $('f-gehen').value, pause: $('f-pause').value, notiz: $('f-notiz').value
     };
   }
   function pruefen(k, f, now) {
     var hk = heuteKey(now);
+    if (!f.art && f.halb && !f.kommen && !f.gehen) return { fehler: '', min: 0 };
     if (f.art) {
       if (f.bis && f.bis < k) return { fehler: 'Das Enddatum liegt vor diesem Tag.', min: null };
       if (f.bis && (vonKey(f.bis) - vonKey(k)) / 864e5 > 366) return { fehler: 'Bitte höchstens ein Jahr auf einmal eintragen.', min: null };
@@ -950,6 +960,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     $('f-bis').value = k;
     var art = t && t.art ? t.art : (!t && k > heuteKey(Date.now()) ? 'urlaub' : '');
     Array.prototype.forEach.call(document.querySelectorAll('input[name="art"]'), function (r) { r.checked = r.value === art; });
+    $('f-halb').checked = !!(t && t.halb);
     vorherFokus = document.activeElement;
     $('sheet').hidden = false;
     renderSheet(Date.now());
@@ -977,8 +988,9 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     if (k === heuteKey(now)) log.push({ zeit: hm(now), text: 'Von Hand geändert' });
     var days = Object.assign({}, state.days);
     days[k] = {
-      kommen: um(k, f.kommen),
-      gehen: gehen,
+      kommen: f.kommen ? um(k, f.kommen) : null,
+      gehen: f.kommen ? gehen : null,
+      halb: !!f.halb,
       pauseMin: Math.max(0, Math.min(720, Number(f.pause) || 0)),
       pauseSeit: gehen ? null : alt.pauseSeit,
       art: null,
@@ -1115,7 +1127,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 
     var be = $('btn-heute-edit');
     be.disabled = !state.ready;
-    be.textContent = t && (t.kommen || t.art) ? 'Bearbeiten' : 'Nachtragen';
+    be.textContent = t && (t.kommen || t.art || t.halb) ? 'Bearbeiten' : 'Nachtragen';
 
     var log = t && t.log ? t.log.slice() : [];
     if (st === 'pause') log.push({ zeit: hm(t.pauseSeit) + '–…', text: 'Pause läuft' });
@@ -1199,7 +1211,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       return el('span', w.heute ? 'heute' : '', WT_KURZ[w.i]);
     }));
 
-    var rows = werte.filter(function (w) { return w.i < 5 || w.plan > 0 || (w.t && (w.t.kommen || w.t.art)); }).map(function (w) {
+    var rows = werte.filter(function (w) { return w.i < 5 || w.plan > 0 || (w.t && (w.t.kommen || w.t.art || w.t.halb)); }).map(function (w) {
       var hat = w.t && w.t.kommen;
       var art = w.t && w.t.art;
       var sp, frei = false;
@@ -1207,9 +1219,13 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
         sp = hm(w.t.kommen) + '–' + (w.t.gehen ? hm(w.t.gehen) : (w.st === 'offen' ? 'Ende fehlt' : 'läuft'));
         if (art) sp += ' · ' + ART_NAME[art];
         else if (w.ft) sp += ' · Feiertag';
+        else if (w.t.halb) sp += ' · ½ Urlaub';
         if (w.t.notiz) sp += ' · ' + w.t.notiz;
       } else if (art) {
         sp = ART_NAME[art] + (w.t.notiz ? ' · ' + w.t.notiz : '');
+        frei = true;
+      } else if (w.t && w.t.halb) {
+        sp = '½ Urlaub' + (w.t.notiz ? ' · ' + w.t.notiz : '');
         frei = true;
       } else if (w.ft) {
         sp = w.ft;
@@ -1286,7 +1302,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       }));
       if (alt && monate[alt]) sel.value = alt;
     }
-    $('speicher-hinweis').textContent = 'Stempeluhr Version 8';
+    $('speicher-hinweis').textContent = 'Stempeluhr Version 9';
 
     var ks = $('k-start'), kw2 = $('k-wert');
     if (document.activeElement !== ks) ks.value = state.konto.start || '';
@@ -1355,10 +1371,11 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       if (wd(k) >= 5) cls += ' we';
       if (t && t.art) { cls += ' ' + t.art; info = t.art === 'urlaub' ? 'Urlaub' : 'Krank'; lang = ART_NAME[t.art]; }
       else if (ft) { cls += ' feiertag'; info = 'Feiert.'; lang = ft; }
+      else if (t && t.halb) { cls += ' halb'; info = '½ Url.'; lang = 'halber Urlaubstag'; }
       if (t && t.kommen) {
         if (st === 'arbeit' || st === 'pause') { cls += ' laeuft'; info = 'läuft'; lang = 'Arbeit läuft, ' + dauer(n); }
         else if (st === 'offen') { cls += ' fehlt'; info = 'Ende?'; lang = 'Ende fehlt'; }
-        else { if (!t.art && !ft) cls += ' arbeit'; info = dauer(n); lang = dauer(n) + ' Stunden gearbeitet' + (lang ? ', ' + lang : ''); }
+        else { if (!t.art && !ft && !t.halb) cls += ' arbeit'; info = dauer(n); lang = dauer(n) + ' Stunden gearbeitet' + (lang ? ', ' + lang : ''); }
       } else if (!info && ts !== null && es > 0) {
         cls += ' fehlt'; info = '–' + ''; lang = 'kein Eintrag';
       }
@@ -1380,17 +1397,19 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 
     var genommen = 0, geplant = 0;
     Object.keys(state.days).forEach(function (k) {
-      if (k.slice(0, 4) === String(jahr) && state.days[k].art === 'urlaub') { if (k <= hk) genommen++; else geplant++; }
+      var tg = state.days[k];
+      var anteil = k.slice(0, 4) !== String(jahr) ? 0 : tg.art === 'urlaub' ? 1 : (tg.halb && !tg.art ? 0.5 : 0);
+      if (anteil) { if (k <= hk) genommen += anteil; else geplant += anteil; }
     });
     $('m-urlaub-lbl').textContent = 'Urlaub ' + jahr;
     var uj = urlaubJahr(jahr);
     if (uj.anspruch === null) {
       $('m-urlaub').textContent = tageText(genommen + geplant);
-      $('m-urlaub-hint').textContent = genommen + ' genommen · ' + geplant + ' geplant';
+      $('m-urlaub-hint').textContent = komma(genommen) + ' genommen · ' + komma(geplant) + ' geplant';
     } else {
       var gesamtU = uj.anspruch + uj.rest;
       $('m-urlaub').textContent = String(gesamtU - genommen - geplant).replace('.', ',') + ' übrig';
-      $('m-urlaub-hint').textContent = 'von ' + tageText(gesamtU) + ' · ' + genommen + ' genommen · ' + geplant + ' geplant';
+      $('m-urlaub-hint').textContent = 'von ' + tageText(gesamtU) + ' · ' + komma(genommen) + ' genommen · ' + komma(geplant) + ' geplant';
     }
   }
 
@@ -1402,10 +1421,13 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   function urlaubZaehlen(jahr, hk) {
     var genommen = 0, geplant = 0;
     Object.keys(state.days).forEach(function (k) {
-      if (k.slice(0, 4) === String(jahr) && state.days[k].art === 'urlaub') { if (k <= hk) genommen++; else geplant++; }
+      var tg = state.days[k];
+      var anteil = k.slice(0, 4) !== String(jahr) ? 0 : tg.art === 'urlaub' ? 1 : (tg.halb && !tg.art ? 0.5 : 0);
+      if (anteil) { if (k <= hk) genommen += anteil; else geplant += anteil; }
     });
     return { genommen: genommen, geplant: geplant };
   }
+  function komma(n) { return String(n).replace('.', ','); }
   function tageText(n) { var s = String(n).replace('.', ','); return s + (n === 1 ? ' Tag' : ' Tage'); }
   function urlaubNormal(v) {
     var r = {};
@@ -1437,8 +1459,8 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     if (document.activeElement !== a) a.value = u.anspruch === null ? '' : String(u.anspruch);
     if (document.activeElement !== r) r.value = u.rest ? String(u.rest) : '';
     var gesamt = u.anspruch === null ? null : u.anspruch + u.rest;
-    $('u-belegt').textContent = String(z.genommen + z.geplant);
-    $('u-belegt-hint').textContent = z.genommen + ' genommen · ' + z.geplant + ' geplant';
+    $('u-belegt').textContent = komma(z.genommen + z.geplant);
+    $('u-belegt-hint').textContent = komma(z.genommen) + ' genommen · ' + komma(z.geplant) + ' geplant';
     if (gesamt === null) {
       $('u-frei').textContent = '—';
       $('u-frei-hint').textContent = 'Anspruch eintragen';
@@ -1481,11 +1503,11 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     var d0 = new Date(a[0], a[1] - 1, 1), keys = [];
     while (d0.getMonth() === a[1] - 1) {
       var kk = tagKey(d0), tt = state.days[kk];
-      var relevant = (tt && (tt.kommen || tt.art)) || (kk <= hk && kk >= start && (state.soll[wd(kk)] > 0 || feiertag(kk)));
+      var relevant = (tt && (tt.kommen || tt.art || tt.halb)) || (kk <= hk && kk >= start && (state.soll[wd(kk)] > 0 || feiertag(kk)));
       if (relevant) keys.push(kk);
       d0.setDate(d0.getDate() + 1);
     }
-    var hatEintrag = keys.some(function (k) { var t = state.days[k]; return t && (t.kommen || t.art); });
+    var hatEintrag = keys.some(function (k) { var t = state.days[k]; return t && (t.kommen || t.art || t.halb); });
     var zeilen = [['Datum', 'Wochentag', 'Art', 'Beginn', 'Ende', 'Pause (Min.)', 'Arbeitszeit (Std:Min)', 'Arbeitszeit (Std. dezimal)', 'Soll (Std:Min)', 'Saldo (Std:Min)', 'Notiz']];
     var sumN = 0, sumSoll = 0, sumSaldo = 0;
     keys.forEach(function (k) {
@@ -1495,7 +1517,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       var soll = effSoll(k);
       var ts = tagSaldo(k, now, start);
       var ft = feiertag(k);
-      var art = t.art ? ART_NAME[t.art] : ft ? 'Feiertag (' + ft + ')' : t.kommen ? 'Arbeit' : 'kein Eintrag';
+      var art = t.art ? ART_NAME[t.art] : ft ? 'Feiertag (' + ft + ')' : t.halb ? (t.kommen ? 'Arbeit + ½ Urlaub' : '½ Urlaub') : t.kommen ? 'Arbeit' : 'kein Eintrag';
       sumN += n;
       if (ts !== null) { sumSoll += soll; sumSaldo += ts; }
       zeilen.push([
