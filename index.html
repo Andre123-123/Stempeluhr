@@ -408,6 +408,15 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
           <button type="button" class="btn btn-std c-outline" id="btn-backup">Sicherung speichern</button>
           <button type="button" class="btn btn-std c-outline" id="btn-restore">Sicherung laden</button>
           <input type="file" id="restore-file" hidden>
+          <div class="zwei">
+            <button type="button" class="link-btn" id="btn-copy">Als Text kopieren</button>
+            <button type="button" class="link-btn" id="btn-paste">Aus Text laden</button>
+          </div>
+          <div class="stack" id="restore-box" hidden>
+            <label class="small" for="restore-text">Sicherungstext hier einfügen</label>
+            <textarea class="inp text" id="restore-text" rows="4" style="height: auto; padding: 12px; font-size: 14px" spellcheck="false" autocomplete="off"></textarea>
+            <button type="button" class="btn btn-second c-ink" id="btn-paste-ok">Übernehmen</button>
+          </div>
           <p class="small" id="backup-stand"></p>
           <p class="small" id="backup-info" role="status"></p>
         </section>
@@ -1184,7 +1193,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       }));
       if (alt && monate[alt]) sel.value = alt;
     }
-    $('speicher-hinweis').textContent = 'Stempeluhr · läuft komplett auf diesem Gerät, ohne Konto und ohne Server.';
+    $('speicher-hinweis').textContent = 'Stempeluhr Version 5 · läuft komplett auf diesem Gerät, ohne Konto und ohne Server.';
 
     var ks = $('k-start'), kw2 = $('k-wert');
     if (document.activeElement !== ks) ks.value = state.konto.start || '';
@@ -1414,7 +1423,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   // Andere Tabs/Fenster
   window.addEventListener('storage', function (e) { if (e.key === LS_KEY) { lokalLaden(); renderAll(); } });
 
-  // Datei übergeben: iOS -> Teilen-Menü, Android/PC -> Download (Android teilt keine .json)
+  // Datei übergeben: zuerst Teilen-Menü (iPhone und Android), sonst Download
   function herunterladen(blob, name) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -1438,47 +1447,74 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     return Promise.resolve('download');
   }
   function ergebnisText(r, was) {
-    if (r === 'download') return was + ' im Ordner „Downloads“ gespeichert.';
+    if (r === 'download') return was + ' als Download gestartet. Falls nichts erscheint: „Als Text kopieren“ nutzen.';
     if (r === 'geteilt') return was + ' erstellt.';
     return '';
   }
   // ---------- Sicherung ----------
   function backupInfo(t) { $('backup-info').textContent = t; }
+  function sicherungsText() {
+    return JSON.stringify({ app: 'stempeluhr', version: 2, gespeichert: new Date().toISOString(), days: state.days, soll: state.soll, konto: state.konto });
+  }
+  function alsGesichertMerken() {
+    try { localStorage.setItem(LS_BACKUP, String(Date.now())); } catch (e) { /* ignorieren */ }
+    renderAll();
+  }
   function sicherungSpeichern() {
-    var json = JSON.stringify({ app: 'stempeluhr', version: 2, gespeichert: new Date().toISOString(), days: state.days, soll: state.soll, konto: state.konto }, null, 1);
-    var name = 'Stempeluhr-Sicherung-' + heuteKey(Date.now()) + '.json';
-    dateiAnbieten(name, json, 'application/json').then(function (r) {
+    // .txt statt .json: Android teilt nur bekannte Dateitypen
+    var name = 'Stempeluhr-Sicherung-' + heuteKey(Date.now()) + '.txt';
+    dateiAnbieten(name, sicherungsText(), 'text/plain').then(function (r) {
       backupInfo(ergebnisText(r, 'Sicherung'));
-      if (r !== 'abgebrochen') {
-        try { localStorage.setItem(LS_BACKUP, String(Date.now())); } catch (e) { /* ignorieren */ }
-        renderAll();
-      }
+      if (r !== 'abgebrochen') alsGesichertMerken();
     });
+  }
+  function textKopieren() {
+    var txt = sicherungsText();
+    var ok = function () { backupInfo('Sicherung kopiert. Füge sie in eine Notiz oder E-Mail an dich selbst ein.'); alsGesichertMerken(); };
+    var manuell = function () {
+      var ta = $('restore-text');
+      $('restore-box').hidden = false;
+      ta.value = txt;
+      ta.focus(); ta.select();
+      backupInfo('Text ist markiert. Tippe lange darauf und wähle „Kopieren“.');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, manuell);
+    else manuell();
+  }
+  function wiederherstellen(txt) {
+    var v;
+    try { v = JSON.parse(String(txt).trim()); } catch (e) { v = null; }
+    if (!v || v.app !== 'stempeluhr' || !v.days) { backupInfo('Das ist keine Stempeluhr-Sicherung.'); return false; }
+    var days = Object.assign({}, state.days);
+    var n = 0;
+    Object.keys(v.days).forEach(function (k) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v.days[k]) { days[k] = normal(v.days[k]); n++; }
+    });
+    state.days = days;
+    if (Array.isArray(v.soll) && v.soll.length === 7) state.soll = v.soll.map(sollWert);
+    if (v.konto) state.konto = kontoNormal(v.konto);
+    lokalSpeichern();
+    renderAll();
+    backupInfo(n + ' Tage aus der Sicherung übernommen.');
+    return true;
   }
   $('btn-backup').addEventListener('click', sicherungSpeichern);
   $('sicher-btn').addEventListener('click', sicherungSpeichern);
+  $('btn-copy').addEventListener('click', textKopieren);
   $('btn-restore').addEventListener('click', function () { $('restore-file').click(); });
+  $('btn-paste').addEventListener('click', function () {
+    var box = $('restore-box');
+    box.hidden = !box.hidden;
+    if (!box.hidden) { $('restore-text').value = ''; $('restore-text').focus(); }
+  });
+  $('btn-paste-ok').addEventListener('click', function () {
+    if (wiederherstellen($('restore-text').value)) { $('restore-text').value = ''; $('restore-box').hidden = true; }
+  });
   $('restore-file').addEventListener('change', function (e) {
     var f = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!f) return;
-    f.text().then(function (txt) {
-      var v = JSON.parse(txt);
-      if (!v || v.app !== 'stempeluhr' || !v.days) throw new Error('format');
-      var days = Object.assign({}, state.days);
-      var n = 0;
-      Object.keys(v.days).forEach(function (k) {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v.days[k]) { days[k] = normal(v.days[k]); n++; }
-      });
-      state.days = days;
-      if (Array.isArray(v.soll) && v.soll.length === 7) state.soll = v.soll.map(sollWert);
-      if (v.konto) state.konto = kontoNormal(v.konto);
-      lokalSpeichern();
-      renderAll();
-      backupInfo(n + ' Tage aus der Sicherung übernommen.');
-    }).catch(function () {
-      backupInfo('Diese Datei ist keine Stempeluhr-Sicherung.');
-    });
+    f.text().then(wiederherstellen, function () { backupInfo('Die Datei konnte nicht gelesen werden.'); });
   });
 })();
 </script>
