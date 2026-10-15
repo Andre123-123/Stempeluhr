@@ -201,7 +201,8 @@ h2 { margin: 0; font-size: 17px; font-weight: 700; }
 }
 .inp.text { font-family: var(--f-ui); font-size: 16px; }
 input.inp { -webkit-appearance: none; appearance: none; display: block; max-width: 100%; }
-input.inp::-webkit-date-and-time-value { text-align: left; }
+input.inp[type="time"], input.inp[type="date"] { height: auto; min-height: 50px; padding: 12px; line-height: 24px; }
+input.inp::-webkit-date-and-time-value { text-align: left; min-height: 24px; line-height: 24px; margin: 0; }
 input.inp::-webkit-datetime-edit { padding: 0; }
 .stack { display: flex; flex-direction: column; gap: 14px; }
 .konto { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
