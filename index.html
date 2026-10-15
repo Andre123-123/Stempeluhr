@@ -407,7 +407,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
           <p class="small">Deine Zeiten liegen nur auf diesem iPhone. Wenn du das Symbol löschst, sind sie weg. Speichere ab und zu eine Sicherung, zum Beispiel in iCloud Drive.</p>
           <button type="button" class="btn btn-std c-outline" id="btn-backup">Sicherung speichern</button>
           <button type="button" class="btn btn-std c-outline" id="btn-restore">Sicherung laden</button>
-          <input type="file" id="restore-file" accept=".json,application/json" hidden>
+          <input type="file" id="restore-file" hidden>
           <p class="small" id="backup-stand"></p>
           <p class="small" id="backup-info" role="status"></p>
         </section>
@@ -1298,8 +1298,8 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     var res = baueCsv(m, Date.now());
     if (!res.anzahl) { exportInfo('Für ' + monatName(m) + ' gibt es noch keine Einträge.'); return; }
     exportInfo('');
-    dateiAnbieten('Arbeitszeit-' + m + '.csv', res.text, 'text/csv').then(function (ok) {
-      if (ok) exportInfo('CSV für ' + monatName(m) + ' erstellt.');
+    dateiAnbieten('Arbeitszeit-' + m + '.csv', res.text, 'text/csv').then(function (r) {
+      exportInfo(ergebnisText(r, 'CSV für ' + monatName(m)));
     });
   }
 
@@ -1414,31 +1414,43 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   // Andere Tabs/Fenster
   window.addEventListener('storage', function (e) { if (e.key === LS_KEY) { lokalLaden(); renderAll(); } });
 
-  // Datei an iOS übergeben: Teilen-Menü (In Dateien sichern), sonst normaler Download
-  function dateiAnbieten(name, inhalt, typ) {
-    var blob = new Blob([inhalt], { type: typ });
-    try {
-      var file = new File([blob], name, { type: typ });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        return navigator.share({ files: [file], title: name }).then(function () { return true; }, function () { return false; });
-      }
-    } catch (e) { /* weiter mit Download */ }
+  // Datei übergeben: iOS -> Teilen-Menü, Android/PC -> Download (Android teilt keine .json)
+  function herunterladen(blob, name) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
-    a.href = url; a.download = name;
+    a.href = url; a.download = name; a.rel = 'noopener';
     document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-    return Promise.resolve(true);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  }
+  function dateiAnbieten(name, inhalt, typ) {
+    var blob = new Blob([inhalt], { type: typ });
+    var file = null, kannTeilen = false;
+    try { file = new File([blob], name, { type: typ }); } catch (e) { file = null; }
+    try { kannTeilen = !!(file && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { kannTeilen = false; }
+    if (kannTeilen) {
+      return navigator.share({ files: [file], title: name }).then(function () { return 'geteilt'; }, function (e) {
+        if (e && e.name === 'AbortError') return 'abgebrochen';
+        herunterladen(blob, name);
+        return 'download';
+      });
+    }
+    herunterladen(blob, name);
+    return Promise.resolve('download');
+  }
+  function ergebnisText(r, was) {
+    if (r === 'download') return was + ' im Ordner „Downloads“ gespeichert.';
+    if (r === 'geteilt') return was + ' erstellt.';
+    return '';
   }
   // ---------- Sicherung ----------
   function backupInfo(t) { $('backup-info').textContent = t; }
   function sicherungSpeichern() {
     var json = JSON.stringify({ app: 'stempeluhr', version: 2, gespeichert: new Date().toISOString(), days: state.days, soll: state.soll, konto: state.konto }, null, 1);
     var name = 'Stempeluhr-Sicherung-' + heuteKey(Date.now()) + '.json';
-    dateiAnbieten(name, json, 'application/json').then(function (ok) {
-      if (ok) {
+    dateiAnbieten(name, json, 'application/json').then(function (r) {
+      backupInfo(ergebnisText(r, 'Sicherung'));
+      if (r !== 'abgebrochen') {
         try { localStorage.setItem(LS_BACKUP, String(Date.now())); } catch (e) { /* ignorieren */ }
-        backupInfo('Sicherung erstellt.');
         renderAll();
       }
     });
