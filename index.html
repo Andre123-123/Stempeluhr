@@ -298,6 +298,13 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 .legende span { display: inline-flex; align-items: center; gap: 6px; }
 .legende i { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
 
+
+/* Wischen */
+@keyframes rein-links { from { transform: translateX(36px); opacity: 0.3; } }
+@keyframes rein-rechts { from { transform: translateX(-36px); opacity: 0.3; } }
+.rein-links { animation: rein-links 0.2s ease-out; }
+.rein-rechts { animation: rein-rechts 0.2s ease-out; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
@@ -1137,7 +1144,6 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       ? mo.getDate() + '.–' + so.getDate() + '. ' + MONATE[so.getMonth()]
       : mo.getDate() + '. ' + MON_K[mo.getMonth()] + ' – ' + so.getDate() + '. ' + MON_K[so.getMonth()];
     $('kw-text').textContent = 'KW ' + kw(mo) + ' · ' + spanne;
-    $('w-vor').disabled = state.offset >= 0;
 
     var ist = 0, saldo = 0, sollSumme = 0, laeuftHeute = false;
     var start = kontoStart();
@@ -1269,7 +1275,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       }));
       if (alt && monate[alt]) sel.value = alt;
     }
-    $('speicher-hinweis').textContent = 'Stempeluhr Version 6 · läuft komplett auf diesem Gerät, ohne Konto und ohne Server.';
+    $('speicher-hinweis').textContent = 'Stempeluhr Version 7 · läuft komplett auf diesem Gerät, ohne Konto und ohne Server.';
 
     var ks = $('k-start'), kw2 = $('k-wert');
     if (document.activeElement !== ks) ks.value = state.konto.start || '';
@@ -1459,8 +1465,35 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     var b = e.target.closest('button.kc');
     if (b && b.dataset.key) oeffnen(b.dataset.key);
   });
+  // ---------- Wischen: Woche und Monat wechseln ----------
+  function wischen(bereich, weiter) {
+    var x0 = 0, y0 = 0, t0 = 0, aktiv = false;
+    bereich.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { aktiv = false; return; }
+      var p = e.touches[0];
+      // Ränder frei lassen für die Zurück-Geste des Systems
+      aktiv = p.clientX > 24 && p.clientX < window.innerWidth - 24;
+      x0 = p.clientX; y0 = p.clientY; t0 = Date.now();
+    }, { passive: true });
+    bereich.addEventListener('touchend', function (e) {
+      if (!aktiv) return;
+      aktiv = false;
+      var p = e.changedTouches[0];
+      var dx = p.clientX - x0, dy = p.clientY - y0;
+      if (Date.now() - t0 > 700 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      var richtung = dx < 0 ? 1 : -1; // nach links wischen = vor
+      if (!weiter(richtung)) return;
+      var inhalt = bereich.querySelector('.wrap');
+      inhalt.classList.remove('rein-links', 'rein-rechts');
+      void inhalt.offsetWidth;
+      inhalt.classList.add(richtung > 0 ? 'rein-links' : 'rein-rechts');
+    }, { passive: true });
+  }
+  wischen($('v-woche'), function (r) { state.offset += r; renderWoche(Date.now()); return true; });
+  wischen($('v-kalender'), function (r) { state.kalOffset += r; renderKalender(Date.now()); return true; });
+
   $('w-zurueck').addEventListener('click', function () { state.offset -= 1; renderWoche(Date.now()); });
-  $('w-vor').addEventListener('click', function () { if (state.offset < 0) { state.offset += 1; renderWoche(Date.now()); } });
+  $('w-vor').addEventListener('click', function () { state.offset += 1; renderWoche(Date.now()); });
   $('days').addEventListener('click', function (e) {
     var b = e.target.closest('button.day');
     if (b && !b.disabled) oeffnen(b.dataset.key);

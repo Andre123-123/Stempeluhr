@@ -1,5 +1,5 @@
 // Stempeluhr: hält die App offline verfügbar. Bei Änderungen VERSION erhöhen.
-const VERSION = 'stempeluhr-v6';
+const VERSION = 'stempeluhr-v7';
 const DATEIEN = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
