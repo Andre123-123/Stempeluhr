@@ -200,7 +200,20 @@ h2 { margin: 0; font-size: 17px; font-weight: 700; }
   background: var(--bg); color: var(--fg); font-family: var(--f-num); font-size: 18px; font-weight: 500;
 }
 .inp.text { font-family: var(--f-ui); font-size: 16px; }
+input.inp { -webkit-appearance: none; appearance: none; display: block; max-width: 100%; }
 input.inp::-webkit-date-and-time-value { text-align: left; }
+input.inp::-webkit-datetime-edit { padding: 0; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.konto { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.seg-wrap { border: 0; margin: 0; padding: 0; min-width: 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line-strong); }
+.seg label { position: relative; cursor: pointer; }
+.seg input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.seg span { display: flex; align-items: center; justify-content: center; min-height: 40px; border-radius: 9px; font-size: 15px; font-weight: 600; color: var(--muted); }
+.seg input:checked + span { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.day.frei .sp { color: var(--pause); }
 select.inp { font-family: var(--f-ui); font-size: 16px; }
 
 /* Bottom-Sheet */
@@ -273,6 +286,11 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
           <p>Speichern ist hier gesperrt (privates Surfen?). Öffne die Stempeluhr über das Symbol auf dem Home-Bildschirm.</p>
         </div>
 
+        <div class="banner" id="sicher-banner" hidden>
+          <p id="sicher-text"></p>
+          <button type="button" class="link-btn" id="sicher-btn">Jetzt sichern</button>
+        </div>
+
         <div class="banner" id="offen-banner" hidden>
           <p id="offen-text"></p>
           <button type="button" class="link-btn" id="offen-btn">Ende eintragen</button>
@@ -327,7 +345,8 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 
         <section class="card sum" aria-label="Wochensumme">
           <div><span class="lbl">Gearbeitet</span><span class="big" id="w-ist">0:00</span><span class="small" id="w-soll">&nbsp;</span></div>
-          <div><span class="lbl">Saldo</span><span class="big" id="w-saldo">0:00</span><span class="small" id="w-saldo-hint">&nbsp;</span></div>
+          <div><span class="lbl">Saldo Woche</span><span class="big" id="w-saldo">0:00</span><span class="small" id="w-saldo-hint">&nbsp;</span></div>
+          <div class="konto"><span class="lbl">Überstundenkonto</span><span class="big" id="w-konto">0:00</span><span class="small" id="w-konto-hint">&nbsp;</span></div>
         </section>
 
         <section class="card chart" aria-hidden="true">
@@ -352,6 +371,23 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
           <p class="small">In Stunden und Minuten. 00:00 bedeutet: freier Tag.</p>
           <div class="soll-grid" id="soll-grid"></div>
           <p class="small" id="soll-summe">&nbsp;</p>
+          <p class="small">Gesetzliche Feiertage in Hessen werden automatisch berücksichtigt.</p>
+        </section>
+
+        <section class="card form-card" aria-labelledby="h-konto">
+          <h2 id="h-konto">Überstundenkonto</h2>
+          <p class="small">Zählt jeden Tag ab dem Startdatum. Ein Arbeitstag ohne Eintrag zählt als Minus. Urlaub, Krank und Feiertage zählen als erfüllt.</p>
+          <div class="zwei">
+            <div class="field">
+              <label for="k-start">Zählt ab</label>
+              <input class="inp" type="date" id="k-start">
+            </div>
+            <div class="field">
+              <label for="k-wert">Startwert</label>
+              <input class="inp" type="text" id="k-wert" placeholder="+0:00" autocomplete="off" spellcheck="false">
+            </div>
+          </div>
+          <p class="small" id="k-info" role="status">&nbsp;</p>
         </section>
 
         <section class="card form-card" aria-labelledby="h-export" id="export-card">
@@ -371,6 +407,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
           <button type="button" class="btn btn-std c-outline" id="btn-backup">Sicherung speichern</button>
           <button type="button" class="btn btn-std c-outline" id="btn-restore">Sicherung laden</button>
           <input type="file" id="restore-file" accept=".json,application/json" hidden>
+          <p class="small" id="backup-stand"></p>
           <p class="small" id="backup-info" role="status"></p>
         </section>
 
@@ -404,26 +441,42 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
           <h2 id="sheet-title" tabindex="-1" style="font-size: 20px">&nbsp;</h2>
           <button type="button" class="link-btn muted" id="sheet-cancel">Abbrechen</button>
         </div>
-        <div class="zwei">
-          <div class="field">
-            <label for="f-kommen">Beginn</label>
-            <input class="inp" type="time" id="f-kommen" step="60">
+        <fieldset class="seg-wrap">
+          <legend class="sr">Art des Tages</legend>
+          <div class="seg">
+            <label><input type="radio" name="art" value="" checked><span>Arbeit</span></label>
+            <label><input type="radio" name="art" value="urlaub"><span>Urlaub</span></label>
+            <label><input type="radio" name="art" value="krank"><span>Krank</span></label>
           </div>
+        </fieldset>
+        <p class="small" id="f-feiertag" hidden></p>
+        <div class="stack" id="f-zeiten">
+          <div class="zwei">
+            <div class="field">
+              <label for="f-kommen">Beginn</label>
+              <input class="inp" type="time" id="f-kommen" step="60">
+            </div>
+            <div class="field">
+              <label for="f-gehen">Ende</label>
+              <input class="inp" type="time" id="f-gehen" step="60">
+            </div>
+          </div>
+          <p class="small" id="f-ende-hint" hidden>Ende leer lassen, solange du noch arbeitest.</p>
           <div class="field">
-            <label for="f-gehen">Ende</label>
-            <input class="inp" type="time" id="f-gehen" step="60">
+            <label for="f-pause">Pause in Minuten</label>
+            <input class="inp" type="number" id="f-pause" inputmode="numeric" min="0" max="720" step="5">
           </div>
         </div>
-        <p class="small" id="f-ende-hint" hidden>Ende leer lassen, solange du noch arbeitest.</p>
-        <div class="field">
-          <label for="f-pause">Pause in Minuten</label>
-          <input class="inp" type="number" id="f-pause" inputmode="numeric" min="0" max="720" step="5">
+        <div class="field" id="f-bis-feld" hidden>
+          <label for="f-bis">Bis einschließlich</label>
+          <input class="inp" type="date" id="f-bis">
+          <p class="small">Wochenenden, Feiertage und Tage mit Arbeitszeit werden übersprungen.</p>
         </div>
         <div class="field">
           <label for="f-notiz">Notiz (optional)</label>
           <input class="inp text" type="text" id="f-notiz" maxlength="200" placeholder="z. B. Montage, Homeoffice" autocomplete="off">
         </div>
-        <div class="total"><b>Arbeitszeit</b><span id="f-dauer">—</span></div>
+        <div class="total" id="f-total"><b>Arbeitszeit</b><span id="f-dauer">—</span></div>
         <p class="fehler" id="f-fehler" role="alert" hidden></p>
         <div class="sheet-foot">
           <button type="submit" class="btn btn-std c-ink">Speichern</button>
@@ -479,10 +532,83 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   }
 
   // ---------- Datenmodell ----------
-  function leer() { return { kommen: null, gehen: null, pauseMin: 0, pauseSeit: null, notiz: '', log: [] }; }
+  function leer() { return { kommen: null, gehen: null, pauseMin: 0, pauseSeit: null, art: null, notiz: '', log: [] }; }
   function zahl(x) { return typeof x === 'number' && isFinite(x) ? x : null; }
+  var ART_NAME = { urlaub: 'Urlaub', krank: 'Krank' };
+
+  // Gesetzliche Feiertage Hessen
+  var feiertagCache = {};
+  function ostern(y) {
+    var a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+    var f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+    var i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    var n = h + l - 7 * m + 114;
+    return new Date(y, Math.floor(n / 31) - 1, (n % 31) + 1);
+  }
+  function feiertage(y) {
+    if (feiertagCache[y]) return feiertagCache[y];
+    var o = ostern(y), r = {};
+    var plus = function (t) { var d = new Date(o); d.setDate(d.getDate() + t); return d; };
+    var add = function (d, name) { r[tagKey(d)] = name; };
+    add(new Date(y, 0, 1), 'Neujahr');
+    add(plus(-2), 'Karfreitag');
+    add(plus(1), 'Ostermontag');
+    add(new Date(y, 4, 1), 'Tag der Arbeit');
+    add(plus(39), 'Christi Himmelfahrt');
+    add(plus(50), 'Pfingstmontag');
+    add(plus(60), 'Fronleichnam');
+    add(new Date(y, 9, 3), 'Tag der Deutschen Einheit');
+    add(new Date(y, 11, 25), '1. Weihnachtstag');
+    add(new Date(y, 11, 26), '2. Weihnachtstag');
+    feiertagCache[y] = r;
+    return r;
+  }
+  function feiertag(k) { return feiertage(Number(k.slice(0, 4)))[k] || null; }
+  // Soll, das an diesem Tag tatsächlich gilt (Feiertag, Urlaub, Krank = 0)
+  function effSoll(k) {
+    var t = state.days[k];
+    if (feiertag(k) || (t && t.art)) return 0;
+    return state.soll[wd(k)];
+  }
+  function kontoStart() {
+    if (state.konto.start) return state.konto.start;
+    var ks = Object.keys(state.days).filter(function (k) { return state.days[k].kommen || state.days[k].art; }).sort();
+    return ks[0] || heuteKey(Date.now());
+  }
+  // Beitrag eines Tages zum Saldo, null = zählt (noch) nicht
+  function tagSaldo(k, now, start) {
+    var hk = heuteKey(now);
+    if (k < start || k > hk) return null;
+    var t = state.days[k];
+    var st = status(t, k, now);
+    var soll = effSoll(k);
+    if (st === 'feierabend') return netto(t, k, now) - soll;
+    if (st !== 'aus') return null;
+    if (k === hk) return null;
+    return -soll;
+  }
+  function kontoStand(now) {
+    var start = kontoStart(), hk = heuteKey(now), sum = state.konto.startwert || 0;
+    var d = vonKey(start), n = 0;
+    while (tagKey(d) <= hk && n < 5000) {
+      var v = tagSaldo(tagKey(d), now, start);
+      if (v !== null) sum += v;
+      d.setDate(d.getDate() + 1);
+      n++;
+    }
+    return sum;
+  }
+  function datumKurz(k) { var d = vonKey(k); return P2(d.getDate()) + '.' + P2(d.getMonth() + 1) + '.' + d.getFullYear(); }
+  function parseDauer(s) {
+    var m = String(s).trim().replace('−', '-').match(/^([+-]?)(\d{1,4})(?::(\d{1,2}))?$/);
+    if (!m || (m[3] && Number(m[3]) > 59)) return null;
+    var v = Number(m[2]) * 60 + Number(m[3] || 0);
+    return m[1] === '-' ? -v : v;
+  }
+
   function normal(v) {
     return {
+      art: v.art === 'urlaub' || v.art === 'krank' ? v.art : null,
       kommen: zahl(v.kommen),
       gehen: zahl(v.gehen),
       pauseMin: Math.max(0, zahl(v.pauseMin) || 0),
@@ -517,6 +643,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     mode: null, // 'db' | 'lokal'
     days: {},
     soll: STD_SOLL.slice(),
+    konto: { start: '', startwert: 0 },
     screen: 'heute',
     offset: 0,
     editKey: null,
@@ -597,11 +724,29 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
         });
       }
       if (v && Array.isArray(v.soll) && v.soll.length === 7) state.soll = v.soll.map(sollWert);
+      if (v && v.konto) state.konto = kontoNormal(v.konto);
     } catch (e) { /* ohne Speicher weiter */ }
   }
+  function kontoNormal(k) {
+    return {
+      start: typeof k.start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k.start) ? k.start : '',
+      startwert: zahl(k.startwert) || 0
+    };
+  }
   function lokalSpeichern() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify({ days: state.days, soll: state.soll })); }
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ days: state.days, soll: state.soll, konto: state.konto })); }
     catch (e) { toast('Konnte nicht speichern. Ist privates Surfen aktiv?'); }
+  }
+  var LS_BACKUP = 'stempeluhr.letzteSicherung';
+  function letzteSicherung() {
+    try { return Number(localStorage.getItem(LS_BACKUP)) || 0; } catch (e) { return 0; }
+  }
+  function sicherungFaellig(now) {
+    var ks = Object.keys(state.days).sort();
+    if (!ks.length) return false;
+    var last = letzteSicherung();
+    var seit = last || vonKey(ks[0]).getTime();
+    return now - seit > 14 * 864e5;
   }
   function sollWert(x) { return typeof x === 'number' && isFinite(x) && x >= 0 && x <= 1440 ? x : 0; }
 
@@ -662,10 +807,20 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   var vorherFokus = null;
   var loeschTimer = null;
   function formWerte() {
-    return { kommen: $('f-kommen').value, gehen: $('f-gehen').value, pause: $('f-pause').value, notiz: $('f-notiz').value };
+    var art = document.querySelector('input[name="art"]:checked');
+    return {
+      art: art ? art.value : '',
+      bis: $('f-bis').value,
+      kommen: $('f-kommen').value, gehen: $('f-gehen').value, pause: $('f-pause').value, notiz: $('f-notiz').value
+    };
   }
   function pruefen(k, f, now) {
     var hk = heuteKey(now);
+    if (f.art) {
+      if (f.bis && f.bis < k) return { fehler: 'Das Enddatum liegt vor diesem Tag.', min: null };
+      if (f.bis && (vonKey(f.bis) - vonKey(k)) / 864e5 > 366) return { fehler: 'Bitte höchstens ein Jahr auf einmal eintragen.', min: null };
+      return { fehler: '', min: 0 };
+    }
     if (!f.kommen) return { fehler: 'Bitte einen Beginn eintragen.', min: null };
     if (!f.gehen && k !== hk) return { fehler: 'Bitte ein Ende eintragen.', min: null };
     var a = um(k, f.kommen);
@@ -688,6 +843,9 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     $('f-gehen').value = t && t.gehen ? hm(t.gehen) : '';
     $('f-pause').value = t ? String(Math.round(t.pauseMin)) : '30';
     $('f-notiz').value = t && t.notiz ? t.notiz : '';
+    $('f-bis').value = k;
+    var art = t && t.art ? t.art : '';
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="art"]'), function (r) { r.checked = r.value === art; });
     vorherFokus = document.activeElement;
     $('sheet').hidden = false;
     renderSheet(Date.now());
@@ -708,6 +866,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     var f = formWerte();
     var r = pruefen(k, f, now);
     if (r.fehler) { state.versucht = true; renderSheet(now); return; }
+    if (f.art) { abwesenheitSpeichern(k, f); return; }
     var alt = state.days[k] || leer();
     var gehen = f.gehen ? um(k, f.gehen) : null;
     var log = (alt.log || []).slice();
@@ -718,6 +877,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       gehen: gehen,
       pauseMin: Math.max(0, Math.min(720, Number(f.pause) || 0)),
       pauseSeit: gehen ? null : alt.pauseSeit,
+      art: null,
       notiz: f.notiz.trim().slice(0, 200),
       log: log.slice(-40)
     };
@@ -725,6 +885,27 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     schliessen();
     renderAll();
     speichereTag(k);
+  }
+  function abwesenheitSpeichern(k, f) {
+    var bis = f.bis && f.bis > k ? f.bis : k;
+    var days = Object.assign({}, state.days);
+    var d = vonKey(k), anzahl = 0, n = 0;
+    while (tagKey(d) <= bis && n < 400) {
+      var kk = tagKey(d);
+      var alt = days[kk];
+      var erster = kk === k;
+      if (erster || (state.soll[wd(kk)] > 0 && !feiertag(kk) && !(alt && alt.kommen))) {
+        days[kk] = { kommen: null, gehen: null, pauseMin: 0, pauseSeit: null, art: f.art, notiz: f.notiz.trim().slice(0, 200), log: [] };
+        anzahl++;
+      }
+      d.setDate(d.getDate() + 1);
+      n++;
+    }
+    state.days = days;
+    schliessen();
+    renderAll();
+    lokalSpeichern();
+    if (anzahl > 1) toast(ART_NAME[f.art] + ' für ' + anzahl + ' Tage eingetragen.');
   }
   function loeschen() {
     var k = state.editKey;
@@ -766,15 +947,27 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     var k = heuteKey(now);
     var t = state.days[k];
     var st = status(t, k, now);
-    var soll = state.soll[wd(k)];
+    var soll = effSoll(k);
     var n = netto(t, k, now);
     var laeuft = st === 'arbeit' || st === 'pause';
+    var ft = feiertag(k);
 
-    $('heute-datum').textContent = datumLang(k);
+    $('heute-datum').textContent = datumLang(k) + (ft ? ' · ' + ft : '');
     $('lokal-banner').hidden = !speicherGesperrt;
+
+    var sb = $('sicher-banner');
+    var faellig = state.ready && sicherungFaellig(now);
+    sb.hidden = !faellig;
+    if (faellig) {
+      var last = letzteSicherung();
+      $('sicher-text').textContent = last
+        ? 'Letzte Sicherung vor ' + Math.floor((now - last) / 864e5) + ' Tagen.'
+        : 'Du hast noch keine Sicherung gespeichert.';
+    }
 
     var text;
     if (!state.ready) text = 'Lade deine Zeiten …';
+    else if (st === 'aus' && t && t.art) text = ART_NAME[t.art] + ' eingetragen';
     else if (st === 'aus') text = 'Nicht eingestempelt';
     else if (st === 'arbeit') text = 'Arbeit läuft seit ' + hm(t.kommen);
     else if (st === 'pause') text = 'Pause seit ' + hm(t.pauseSeit);
@@ -789,6 +982,8 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 
     var rest;
     if (!state.ready) rest = ' ';
+    else if (st === 'aus' && t && t.art) rest = 'Heute zählt das Soll als erfüllt.';
+    else if (st === 'aus' && ft) rest = 'Feiertag in Hessen: ' + ft;
     else if (st === 'aus') rest = soll > 0 ? 'Soll heute: ' + dauer(soll) : 'Heute ist kein Arbeitstag eingeplant.';
     else if (Math.round(n - soll) === 0) rest = 'Soll genau erreicht';
     else if (n > soll) rest = dauer(n - soll, true) + ' über dem Soll';
@@ -816,7 +1011,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
 
     var be = $('btn-heute-edit');
     be.disabled = !state.ready;
-    be.textContent = t && t.kommen ? 'Bearbeiten' : 'Nachtragen';
+    be.textContent = t && (t.kommen || t.art) ? 'Bearbeiten' : 'Nachtragen';
 
     var log = t && t.log ? t.log.slice() : [];
     if (st === 'pause') log.push({ zeit: hm(t.pauseSeit) + '–…', text: 'Pause läuft' });
@@ -859,6 +1054,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     $('w-vor').disabled = state.offset >= 0;
 
     var ist = 0, saldo = 0, sollSumme = 0, laeuftHeute = false;
+    var start = kontoStart();
     var werte = [];
     for (var i = 0; i < 7; i++) {
       var d = new Date(mo); d.setDate(d.getDate() + i);
@@ -866,17 +1062,21 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       var t = state.days[k];
       var st = status(t, k, now);
       var n = netto(t, k, now);
-      var sollTag = state.soll[i];
+      var sollTag = effSoll(k);
       sollSumme += sollTag;
       ist += n;
-      if (st === 'feierabend') saldo += n - sollTag;
+      var ts = tagSaldo(k, now, start);
+      if (ts !== null) saldo += ts;
       if (st === 'arbeit' || st === 'pause') laeuftHeute = true;
-      werte.push({ i: i, d: d, k: k, t: t, st: st, n: n, soll: sollTag, heute: k === hk, zukunft: k > hk });
+      werte.push({ i: i, d: d, k: k, t: t, st: st, n: n, soll: sollTag, plan: state.soll[i], ft: feiertag(k), heute: k === hk, zukunft: k > hk });
     }
     $('w-ist').textContent = dauer(ist);
     $('w-soll').textContent = 'von ' + dauer(sollSumme) + ' Soll';
     $('w-saldo').textContent = dauer(saldo, true);
-    $('w-saldo-hint').textContent = laeuftHeute ? 'ohne heute, läuft noch' : 'abgeschlossene Tage';
+    $('w-saldo-hint').textContent = laeuftHeute ? 'ohne heute, läuft noch' : 'bis heute';
+    var sw = state.konto.startwert || 0;
+    $('w-konto').textContent = dauer(kontoStand(now), true);
+    $('w-konto-hint').textContent = 'seit ' + datumKurz(start) + (sw ? ' · Startwert ' + dauer(sw, true) : '') + (laeuftHeute ? ' · ohne heute' : '');
 
     var max = Math.max.apply(null, [600].concat(werte.map(function (w) { return w.n; }), state.soll));
     var H = 110;
@@ -896,21 +1096,30 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       return el('span', w.heute ? 'heute' : '', WT_KURZ[w.i]);
     }));
 
-    var rows = werte.filter(function (w) { return w.i < 5 || w.soll > 0 || (w.t && w.t.kommen); }).map(function (w) {
+    var rows = werte.filter(function (w) { return w.i < 5 || w.plan > 0 || (w.t && (w.t.kommen || w.t.art)); }).map(function (w) {
       var hat = w.t && w.t.kommen;
-      var sp;
+      var art = w.t && w.t.art;
+      var sp, frei = false;
       if (hat) {
         sp = hm(w.t.kommen) + '–' + (w.t.gehen ? hm(w.t.gehen) : (w.st === 'offen' ? 'Ende fehlt' : 'läuft'));
+        if (art) sp += ' · ' + ART_NAME[art];
+        else if (w.ft) sp += ' · Feiertag';
         if (w.t.notiz) sp += ' · ' + w.t.notiz;
+      } else if (art) {
+        sp = ART_NAME[art] + (w.t.notiz ? ' · ' + w.t.notiz : '');
+        frei = true;
+      } else if (w.ft) {
+        sp = w.ft;
+        frei = true;
       } else {
-        sp = w.soll > 0 ? (w.zukunft ? '' : 'kein Eintrag') : 'frei';
+        sp = w.plan > 0 ? (w.zukunft || w.k < start ? '' : 'kein Eintrag') : 'frei';
       }
       var h = hat && w.st !== 'offen' ? dauer(w.n) : '—';
-      var b = el('button', 'day' + (w.heute ? ' is-heute' : '') + (w.st === 'arbeit' || w.st === 'pause' ? ' laeuft' : '') + (w.st === 'offen' ? ' offen' : ''));
+      var b = el('button', 'day' + (w.heute ? ' is-heute' : '') + (w.st === 'arbeit' || w.st === 'pause' ? ' laeuft' : '') + (w.st === 'offen' ? ' offen' : '') + (frei ? ' frei' : ''));
       b.type = 'button';
       b.dataset.key = w.k;
-      b.disabled = w.zukunft;
-      b.setAttribute('aria-label', datumLang(w.k) + ': ' + (sp || 'kein Eintrag') + (hat && w.st !== 'offen' ? ', ' + h + ' Stunden' : '') + (w.zukunft ? '' : '. Bearbeiten'));
+      b.disabled = false;
+      b.setAttribute('aria-label', datumLang(w.k) + ': ' + (sp || 'kein Eintrag') + (hat && w.st !== 'offen' ? ', ' + h + ' Stunden' : '') + (b.disabled ? '' : '. Bearbeiten'));
       var wdEl = el('span', 'wd');
       wdEl.appendChild(el('b', null, WT_KURZ[w.i]));
       wdEl.appendChild(el('span', null, w.heute ? 'heute' : P2(w.d.getDate()) + '.' + P2(w.d.getMonth() + 1) + '.'));
@@ -924,7 +1133,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', 'M9 6l6 6-6 6');
       svg.appendChild(path);
-      if (!w.zukunft) b.appendChild(svg);
+      if (!b.disabled) b.appendChild(svg);
       return b;
     });
     $('days').replaceChildren.apply($('days'), rows);
@@ -975,7 +1184,21 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       if (alt && monate[alt]) sel.value = alt;
     }
     $('speicher-hinweis').textContent = 'Stempeluhr · läuft komplett auf diesem Gerät, ohne Konto und ohne Server.';
+
+    var ks = $('k-start'), kw2 = $('k-wert');
+    if (document.activeElement !== ks) ks.value = state.konto.start || '';
+    if (document.activeElement !== kw2) kw2.value = state.konto.startwert ? dauer(state.konto.startwert, true).replace('−', '-') : '';
+    if (!kontoFehler) {
+      $('k-info').textContent = 'Aktueller Stand: ' + dauer(kontoStand(Date.now()), true) + ' · gezählt ab ' + datumKurz(kontoStart()) +
+        (state.konto.start ? '' : ' (dein erster Eintrag)');
+    }
+
+    var last = letzteSicherung();
+    $('backup-stand').textContent = last
+      ? 'Letzte Sicherung: ' + datumKurz(tagKey(new Date(last))) + ', ' + hm(last) + ' Uhr'
+      : 'Noch keine Sicherung gespeichert.';
   }
+  var kontoFehler = false;
   function monatName(m) { var a = m.split('-').map(Number); return MONATE[a[1] - 1] + ' ' + a[0]; }
 
   function renderSheet(now) {
@@ -985,7 +1208,14 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     if (vonKey(k).getFullYear() !== new Date(now).getFullYear()) titel += ' ' + vonKey(k).getFullYear();
     $('sheet-title').textContent = titel;
     $('f-ende-hint').hidden = k !== heuteKey(now);
-    var r = pruefen(k, formWerte(), now);
+    var f = formWerte();
+    var ft = feiertag(k);
+    $('f-feiertag').hidden = !ft;
+    $('f-feiertag').textContent = ft ? 'Feiertag in Hessen: ' + ft + '. Das Soll ist an diesem Tag 0.' : '';
+    $('f-zeiten').hidden = !!f.art;
+    $('f-total').hidden = !!f.art;
+    $('f-bis-feld').hidden = !f.art;
+    var r = pruefen(k, f, now);
     $('f-dauer').textContent = r.min !== null ? dauer(r.min) : '—';
     var fe = $('f-fehler');
     fe.hidden = !(state.versucht && r.fehler);
@@ -1019,33 +1249,46 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   }
   function dezimal(min) { return (Math.round(min / 60 * 100) / 100).toFixed(2).replace('.', ','); }
   function baueCsv(m, now) {
-    var keys = Object.keys(state.days).filter(function (k) { return k.slice(0, 7) === m && state.days[k].kommen; }).sort();
-    var zeilen = [['Datum', 'Wochentag', 'Beginn', 'Ende', 'Pause (Min.)', 'Arbeitszeit (Std:Min)', 'Arbeitszeit (Std. dezimal)', 'Soll (Std:Min)', 'Saldo (Std:Min)', 'Notiz']];
+    // Alle Tage des Monats bis heute, die etwas zu sagen haben
+    var hk = heuteKey(now), start = kontoStart();
+    var a = m.split('-').map(Number);
+    var d0 = new Date(a[0], a[1] - 1, 1), keys = [];
+    while (d0.getMonth() === a[1] - 1) {
+      var kk = tagKey(d0), tt = state.days[kk];
+      var relevant = (tt && (tt.kommen || tt.art)) || (kk <= hk && kk >= start && (state.soll[wd(kk)] > 0 || feiertag(kk)));
+      if (relevant) keys.push(kk);
+      d0.setDate(d0.getDate() + 1);
+    }
+    var hatEintrag = keys.some(function (k) { var t = state.days[k]; return t && (t.kommen || t.art); });
+    var zeilen = [['Datum', 'Wochentag', 'Art', 'Beginn', 'Ende', 'Pause (Min.)', 'Arbeitszeit (Std:Min)', 'Arbeitszeit (Std. dezimal)', 'Soll (Std:Min)', 'Saldo (Std:Min)', 'Notiz']];
     var sumN = 0, sumSoll = 0, sumSaldo = 0;
     keys.forEach(function (k) {
-      var t = state.days[k];
+      var t = state.days[k] || leer();
       var st = status(t, k, now);
       var n = netto(t, k, now);
-      var soll = state.soll[wd(k)];
-      var d = vonKey(k);
-      var fertig = st === 'feierabend';
+      var soll = effSoll(k);
+      var ts = tagSaldo(k, now, start);
+      var ft = feiertag(k);
+      var art = t.art ? ART_NAME[t.art] : ft ? 'Feiertag (' + ft + ')' : t.kommen ? 'Arbeit' : 'kein Eintrag';
       sumN += n;
-      if (fertig) { sumSoll += soll; sumSaldo += n - soll; }
+      if (ts !== null) { sumSoll += soll; sumSaldo += ts; }
       zeilen.push([
-        P2(d.getDate()) + '.' + P2(d.getMonth() + 1) + '.' + d.getFullYear(),
+        datumKurz(k),
         WT_KURZ[wd(k)],
-        hm(t.kommen),
-        t.gehen ? hm(t.gehen) : (st === 'offen' ? 'fehlt' : 'läuft'),
-        Math.round(pauseGesamt(t, k, now)),
+        art,
+        t.kommen ? hm(t.kommen) : '',
+        t.kommen ? (t.gehen ? hm(t.gehen) : (st === 'offen' ? 'fehlt' : 'läuft')) : '',
+        t.kommen ? Math.round(pauseGesamt(t, k, now)) : '',
         dauer(n),
         dezimal(n),
         dauer(soll),
-        fertig ? dauer(n - soll, true) : '',
+        ts !== null ? dauer(ts, true) : '',
         t.notiz || ''
       ]);
     });
-    zeilen.push(['Summe', '', '', '', '', dauer(sumN), dezimal(sumN), dauer(sumSoll), dauer(sumSaldo, true), '']);
-    return { anzahl: keys.length, text: '﻿' + zeilen.map(function (r) { return r.map(csvFeld).join(';'); }).join('\r\n') + '\r\n' };
+    zeilen.push(['Summe', '', '', '', '', '', dauer(sumN), dezimal(sumN), dauer(sumSoll), dauer(sumSaldo, true), '']);
+    zeilen.push(['Überstundenkonto heute', '', '', '', '', '', '', '', '', dauer(kontoStand(now), true), '']);
+    return { anzahl: hatEintrag ? keys.length : 0, text: '﻿' + zeilen.map(function (r) { return r.map(csvFeld).join(';'); }).join('\r\n') + '\r\n' };
   }
   function exportInfo(t) { $('export-info').textContent = t; }
   function exportieren() {
@@ -1092,6 +1335,25 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
     speichereSoll();
   });
   $('btn-export').addEventListener('click', exportieren);
+  $('k-start').addEventListener('change', function (e) {
+    var v = e.target.value;
+    state.konto = { start: /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '', startwert: state.konto.startwert };
+    lokalSpeichern();
+    renderAll();
+  });
+  $('k-wert').addEventListener('change', function (e) {
+    var raw = e.target.value.trim();
+    var v = raw === '' ? 0 : parseDauer(raw);
+    if (v === null) {
+      kontoFehler = true;
+      $('k-info').textContent = 'Bitte so eingeben: +12:30, -3:00 oder 8';
+      return;
+    }
+    kontoFehler = false;
+    state.konto = { start: state.konto.start, startwert: v };
+    lokalSpeichern();
+    renderAll();
+  });
   $('edit-form').addEventListener('submit', speichern);
   $('edit-form').addEventListener('input', function () { renderSheet(Date.now()); });
   $('sheet-cancel').addEventListener('click', schliessen);
@@ -1169,13 +1431,19 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
   }
   // ---------- Sicherung ----------
   function backupInfo(t) { $('backup-info').textContent = t; }
-  $('btn-backup').addEventListener('click', function () {
-    var json = JSON.stringify({ app: 'stempeluhr', version: 1, gespeichert: new Date().toISOString(), days: state.days, soll: state.soll }, null, 1);
+  function sicherungSpeichern() {
+    var json = JSON.stringify({ app: 'stempeluhr', version: 2, gespeichert: new Date().toISOString(), days: state.days, soll: state.soll, konto: state.konto }, null, 1);
     var name = 'Stempeluhr-Sicherung-' + heuteKey(Date.now()) + '.json';
     dateiAnbieten(name, json, 'application/json').then(function (ok) {
-      backupInfo(ok ? 'Sicherung erstellt.' : '');
+      if (ok) {
+        try { localStorage.setItem(LS_BACKUP, String(Date.now())); } catch (e) { /* ignorieren */ }
+        backupInfo('Sicherung erstellt.');
+        renderAll();
+      }
     });
-  });
+  }
+  $('btn-backup').addEventListener('click', sicherungSpeichern);
+  $('sicher-btn').addEventListener('click', sicherungSpeichern);
   $('btn-restore').addEventListener('click', function () { $('restore-file').click(); });
   $('restore-file').addEventListener('change', function (e) {
     var f = e.target.files && e.target.files[0];
@@ -1191,6 +1459,7 @@ select.inp { font-family: var(--f-ui); font-size: 16px; }
       });
       state.days = days;
       if (Array.isArray(v.soll) && v.soll.length === 7) state.soll = v.soll.map(sollWert);
+      if (v.konto) state.konto = kontoNormal(v.konto);
       lokalSpeichern();
       renderAll();
       backupInfo(n + ' Tage aus der Sicherung übernommen.');
